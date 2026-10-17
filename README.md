@@ -32,7 +32,7 @@ server/.env.example  Backend configuration example
 Install dependencies with:
 
 ```bash
-pnpm install
+npm install
 ```
 
 ## Configuration
@@ -69,15 +69,6 @@ pnpm seed:dev-users
 ```
 
 Development-only credentials:
-
-| Role | Email | Password |
-| --- | --- | --- |
-| Super Admin | `superadmin.test@example.com` | `DevOnly-SuperAdmin-2026!x7` |
-| Admin | `admin.test@example.com` | `DevOnly-Admin-2026!q8` |
-| Faculty | `faculty.test@example.com` | `DevOnly-Faculty-2026!r9` |
-| Member | `member.test@example.com` | `DevOnly-Member-2026!s0` |
-
-Sign in at `/login`, then sign out before switching accounts. Super Admin should be used to verify audit-log access; Admin should verify admin-only features; Faculty and Member should be checked against their existing policy. To remove these accounts from a local test database, delete documents by these four normalized emails in the `users` collection; do not run deletion commands against production.
 
 ## Development
 
