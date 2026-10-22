@@ -9,7 +9,7 @@ import { DashboardCard, EmptyState, ModuleTable, PortalShell, QuickLink, type Po
 
 const roles: Record<string, PortalRole> = { superadmin: 'superadmin', admin: 'admin', faculty: 'faculty', member: 'member' }
 const headings: Record<PortalRole, { eyebrow: string; title: string; copy: string }> = {
-  superadmin: { eyebrow: 'SYSTEM OVERVIEW', title: 'Keep the centre growing.', copy: 'A clear view of users, security, and the systems that support HydroCE.' },
+  superadmin: { eyebrow: 'SYSTEM OVERVIEW', title: 'Keep the centre growing.', copy: 'A clear view of users, security, and the systems that support HYDROPONICS.' },
   admin: { eyebrow: 'OPERATIONS OVERVIEW', title: 'Good work, well tended.', copy: 'Manage the day-to-day rhythm of the centre from one place.' },
   faculty: { eyebrow: 'FACULTY WORKSPACE', title: 'Your work in focus.', copy: 'Keep track of your students, sessions, and research projects.' },
   member: { eyebrow: 'MEMBER WORKSPACE', title: 'Welcome to your centre.', copy: 'Your attendance, projects, and notices — gathered in one place.' },

@@ -3,7 +3,7 @@ import type { Metadata, Viewport } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'Hydroce — Hydroponics Centre of Excellence',
+  title: 'HYDROPONICS — Hydroponics Centre of Excellence',
   description: 'Advancing sustainable agriculture through research, applied learning, and open innovation.',
   generator: 'v0.app',
   icons: {
