@@ -33,8 +33,8 @@ function assertSafeSeedTarget() {
 async function seedTestUsers() {
   assertSafeSeedTarget()
   const [{ connectDatabase, disconnectDatabase }, { User }] = await Promise.all([
-    import('../config/database'),
-    import('../models/user'),
+    import('../config/database.js'),
+    import('../models/user.js'),
   ])
   await connectDatabase()
 
