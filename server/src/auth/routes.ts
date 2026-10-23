@@ -14,16 +14,37 @@ import { requireActiveUser, requireAuth, requireRole } from './middleware'
 const router = Router()
 const loginLimit = rateLimit({ windowMs: 15 * 60 * 1000, limit: 10, standardHeaders: true, legacyHeaders: false })
 const registrationLimit = rateLimit({ windowMs: 60 * 60 * 1000, limit: 5, standardHeaders: true, legacyHeaders: false })
+const passwordResetLimit = rateLimit({ windowMs: 15 * 60 * 1000, limit: 5, standardHeaders: true, legacyHeaders: false })
+
+// Pre-computed constant-work factor hash to prevent timing attacks / user enumeration on login
+const DUMMY_HASH = '$2a$12$e8wNuF586aU1wAovw/vRxe.b9f8Y3Yp.aOqR.t3oVfLgBqE0h1X/2'
+
+function timingSafeMatch(a: string, b: string): boolean {
+  if (!a || !b) return false
+  const aBuf = Buffer.from(a)
+  const bBuf = Buffer.from(b)
+  if (aBuf.length !== bBuf.length) return false
+  return crypto.timingSafeEqual(aBuf, bBuf)
+}
+
 const credentials = z.object({ email: z.string().email().transform(v => v.toLowerCase()), password: z.string().min(8).max(200) })
 const registrationInput = z.object({ name: z.string().trim().min(2).max(120), email: z.string().email().transform(v => v.toLowerCase()), password: z.string().min(8).max(200), accountType: z.enum(['member', 'faculty']), department: z.string().trim().max(160).optional() })
 const managedAccountInput = z.object({ name: z.string().trim().min(2).max(120), email: z.string().email().transform(v => v.toLowerCase()), password: z.string().min(12).max(200), department: z.string().trim().max(160).optional() })
 const bootstrapInput = managedAccountInput.extend({ bootstrapSecret: z.string().min(32).max(200) })
+
 const resetTokens = new Map<string, { userId: string; expiresAt: number }>()
+
+function pruneResetTokens() {
+  const now = Date.now()
+  for (const [hash, record] of resetTokens.entries()) {
+    if (record.expiresAt < now) resetTokens.delete(hash)
+  }
+}
 
 router.post('/bootstrap/super-admin', registrationLimit, async (request, response, next) => {
   try {
     const input = bootstrapInput.parse(request.body)
-    if (!env.bootstrapSecret || input.bootstrapSecret !== env.bootstrapSecret) return response.status(404).json({ ok: false, error: 'Not found' })
+    if (!env.bootstrapSecret || !timingSafeMatch(input.bootstrapSecret, env.bootstrapSecret)) return response.status(404).json({ ok: false, error: 'Not found' })
     const database = await connectDatabase()
     if (!database) return response.status(503).json({ ok: false, error: 'Authentication service is unavailable because the database is not configured.' })
     if (await User.exists({ role: 'super_admin' })) return response.status(409).json({ ok: false, error: 'Super Admin has already been bootstrapped.' })
@@ -56,7 +77,9 @@ router.post('/login', loginLimit, async (request, response, next) => {
     const database = await connectDatabase()
     if (!database) return response.status(503).json({ ok: false, error: 'Authentication service is unavailable because the database is not configured.' })
     const user = await User.findOne({ email: input.email }).select('+passwordHash')
-    if (!user || !(await bcrypt.compare(input.password, user.passwordHash))) {
+    // Always perform bcrypt compare even if user is missing, mitigating user enumeration timing attacks
+    const passwordValid = await bcrypt.compare(input.password, user?.passwordHash ?? DUMMY_HASH)
+    if (!user || !passwordValid) {
       await audit({ email: input.email }, 'login_failed', 'authentication', undefined, undefined, undefined, { description: 'Invalid login credentials', metadata: { email: input.email }, success: false })
       return response.status(401).json({ ok: false, error: 'Invalid email or password' })
     }
@@ -69,7 +92,20 @@ router.post('/login', loginLimit, async (request, response, next) => {
   } catch (error) { next(error) }
 })
 
-router.post('/logout', (request, response, next) => (request as SessionRequest).session.destroy((error?: Error) => error ? next(error) : response.clearCookie('hydro_session').json({ ok: true })))
+router.post('/logout', (request, response, next) => {
+  const sessionRequest = request as SessionRequest
+  sessionRequest.session.destroy((error?: Error) => {
+    if (error) return next(error)
+    response.clearCookie('hydro_session', {
+      httpOnly: true,
+      sameSite: env.nodeEnv === 'production' ? 'none' : 'lax',
+      secure: env.nodeEnv === 'production',
+      path: '/',
+    })
+    response.json({ ok: true })
+  })
+})
+
 router.get('/stats', requireAuth, requireActiveUser, async (request, response, next) => {
   try {
     const database = await connectDatabase()
@@ -86,21 +122,29 @@ router.get('/stats', requireAuth, requireActiveUser, async (request, response, n
 
 router.get('/me', requireAuth, requireActiveUser, (request, response) => response.json({ ok: true, user: request.authUser }))
 
-router.post('/forgot-password', async (request, response, next) => {
+router.post('/forgot-password', passwordResetLimit, async (request, response, next) => {
   try {
     const email = z.object({ email: z.string().email().transform(v => v.toLowerCase()) }).parse(request.body).email
     const database = await connectDatabase()
     if (!database) return response.status(503).json({ ok: false, error: 'Authentication service is unavailable because the database is not configured.' })
     const user = await User.findOne({ email }).select('_id')
-    if (user) { const token = crypto.randomBytes(32).toString('hex'); resetTokens.set(crypto.createHash('sha256').update(token).digest('hex'), { userId: String(user._id), expiresAt: Date.now() + 30 * 60 * 1000 }) }
+    if (user) {
+      pruneResetTokens()
+      if (resetTokens.size < 1000) {
+        const token = crypto.randomBytes(32).toString('hex')
+        resetTokens.set(crypto.createHash('sha256').update(token).digest('hex'), { userId: String(user._id), expiresAt: Date.now() + 30 * 60 * 1000 })
+      }
+    }
     response.json({ ok: true, message: 'If an account exists, password reset instructions will be sent.' })
   } catch (error) { next(error) }
 })
 
-router.post('/reset-password', async (request, response, next) => {
+router.post('/reset-password', passwordResetLimit, async (request, response, next) => {
   try {
     const input = z.object({ token: z.string().min(32), password: z.string().min(8).max(200) }).parse(request.body)
-    const hash = crypto.createHash('sha256').update(input.token).digest('hex'); const record = resetTokens.get(hash)
+    pruneResetTokens()
+    const hash = crypto.createHash('sha256').update(input.token).digest('hex')
+    const record = resetTokens.get(hash)
     if (!record || record.expiresAt < Date.now()) return response.status(400).json({ ok: false, error: 'Invalid or expired reset token' })
     const database = await connectDatabase()
     if (!database) return response.status(503).json({ ok: false, error: 'Authentication service is unavailable because the database is not configured.' })

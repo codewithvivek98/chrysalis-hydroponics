@@ -17,6 +17,8 @@ const userSchema = new Schema({
 }, { timestamps: true })
 
 userSchema.index({ role: 1 }, { unique: true, partialFilterExpression: { role: 'super_admin' }, name: 'one_super_admin' })
+userSchema.index({ role: 1, status: 1, createdAt: -1 })
+userSchema.index({ createdAt: -1 })
 
 export const User = mongoose.models.User || mongoose.model('User', userSchema)
 export type UserDocument = mongoose.InferSchemaType<typeof userSchema> & { _id: mongoose.Types.ObjectId }

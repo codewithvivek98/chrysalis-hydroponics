@@ -3,8 +3,8 @@
 import type { ReactNode } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Bell, ChevronDown, Leaf, LogOut, Menu, X } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { Bell, ChevronDown, Leaf, Loader2, LogOut, Menu, X } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
 import { apiBaseUrl } from '@/lib/api'
 
 export type PortalRole = 'superadmin' | 'admin' | 'faculty' | 'member'
@@ -26,14 +26,112 @@ export { roleLabels }
 
 export function EmptyState({ title, description = 'This module is ready for integration when the supporting API is available.' }: { title: string; description?: string }) { return <div className="portal-empty"><div className="empty-mark"><Leaf size={22} /></div><h3>{title}</h3><p>{description}</p><span className="empty-status">Integration pending</span></div> }
 
-export function DashboardCard({ label, value, detail, tone = 'default' }: { label: string; value: string; detail: string; tone?: 'default' | 'green' | 'amber' }) { return <div className={`dashboard-card ${tone}`}><div className="card-label"><span>{label}</span><span className="card-dot" /></div><strong>{value}</strong><p>{detail}</p></div> }
+export function DashboardCard({ label, value, detail, tone = 'default', loading = false }: { label: string; value: string; detail: string; tone?: 'default' | 'green' | 'amber'; loading?: boolean }) { return <div className={`dashboard-card ${tone}`}><div className="card-label"><span>{label}</span><span className="card-dot" /></div>{loading ? <span className="skeleton-box skeleton-card-val" /> : <strong>{value}</strong>}<p>{detail}</p></div> }
 
 export function ModuleTable({ title, columns }: { title: string; columns: string[] }) {
   const [state, setState] = useState<{ loading: boolean; error?: string; items: Record<string, unknown>[] }>({ loading: true, items: [] })
   const endpoint = title.toLowerCase().includes('attendance') ? 'attendance' : title.toLowerCase().includes('inventory') ? 'inventory' : title.toLowerCase().includes('project') ? 'projects' : title.toLowerCase().includes('notice') ? 'notices' : title.toLowerCase().includes('audit') ? 'audit-log' : null
-  useEffect(() => { if (!endpoint) { setState({ loading: false, items: [] }); return }; let cancelled = false; fetch(`${apiBaseUrl}/api/modules/${endpoint}`, { credentials: 'include' }).then(async response => { const body = await response.json(); if (!response.ok) throw new Error(body.error || 'Unable to load module'); return body }).then(body => { if (!cancelled) setState({ loading: false, items: body.items ?? [] }) }).catch(error => { if (!cancelled) setState({ loading: false, items: [], error: error instanceof Error ? error.message : 'Unable to load module' }) }); return () => { cancelled = true } }, [endpoint])
-  const valueFor = (item: Record<string, unknown>, column: string) => { const key = column.toLowerCase().replace(/[^a-z]/g, ''); const match = Object.entries(item).find(([name]) => name.toLowerCase().replace(/[^a-z]/g, '') === key); return match?.[1] == null ? '—' : typeof match[1] === 'object' ? JSON.stringify(match[1]) : String(match[1]) }
-  return <section className="module-panel"><div className="module-heading"><div><p className="eyebrow">WORKSPACE MODULE</p><h2>{title}</h2></div><span className="module-badge">{state.loading ? 'Loading' : `${state.items.length} records`}</span></div>{state.error ? <div className="portal-empty"><h3>Unable to load records</h3><p>{state.error}</p></div> : <div className="table-wrap"><table><thead><tr>{columns.map(column => <th key={column}>{column}</th>)}</tr></thead><tbody>{state.items.length ? state.items.map((item, index) => <tr key={String(item._id ?? item.id ?? index)}>{columns.map(column => <td key={column}>{valueFor(item, column)}</td>)}</tr>) : <tr><td colSpan={columns.length}><EmptyState title={state.loading ? 'Loading records' : endpoint ? 'No records to display' : 'This module is coming soon'} description={endpoint ? 'This view reflects the authenticated data available to your role.' : 'The supporting API is not part of this module yet.'} /></td></tr>}</tbody></table></div>}</section>
+  
+  useEffect(() => {
+    if (!endpoint) {
+      setState({ loading: false, items: [] })
+      return
+    }
+    let cancelled = false
+    fetch(`${apiBaseUrl}/api/modules/${endpoint}`, { credentials: 'include' })
+      .then(async response => {
+        const body = await response.json()
+        if (!response.ok) throw new Error(body.error || 'Unable to load module')
+        return body
+      })
+      .then(body => {
+        if (!cancelled) setState({ loading: false, items: body.items ?? [] })
+      })
+      .catch(error => {
+        if (!cancelled) setState({ loading: false, items: [], error: error instanceof Error ? error.message : 'Unable to load module' })
+      })
+    return () => { cancelled = true }
+  }, [endpoint])
+
+  // Pre-normalize column keys once per columns change
+  const normalizedColumns = useMemo(
+    () => columns.map(col => ({ name: col, key: col.toLowerCase().replace(/[^a-z]/g, '') })),
+    [columns]
+  )
+
+  // Pre-index item properties once per items change to avoid thousands of O(N) regex scans during cell rendering
+  const indexedRows = useMemo(() => {
+    return state.items.map((item, index) => {
+      const map = new Map<string, unknown>()
+      for (const [key, val] of Object.entries(item)) {
+        map.set(key.toLowerCase().replace(/[^a-z]/g, ''), val)
+      }
+      return { id: String(item._id ?? item.id ?? index), map }
+    })
+  }, [state.items])
+
+  const formatValue = (val: unknown) => {
+    if (val == null) return '—'
+    if (typeof val === 'object') return JSON.stringify(val)
+    return String(val)
+  }
+
+  return (
+    <section className="module-panel">
+      <div className="module-heading">
+        <div>
+          <p className="eyebrow">WORKSPACE MODULE</p>
+          <h2>{title}</h2>
+        </div>
+        <span className="module-badge">{state.loading ? 'Loading' : `${state.items.length} records`}</span>
+      </div>
+      {state.error ? (
+        <div className="portal-empty">
+          <h3>Unable to load records</h3>
+          <p>{state.error}</p>
+        </div>
+      ) : (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                {columns.map(column => <th key={column}>{column}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {state.loading ? (
+                <tr>
+                  <td colSpan={columns.length}>
+                    <div className="loading-panel">
+                      <Loader2 className="spinner" size={28} />
+                      <p>Loading {title.toLowerCase()} records…</p>
+                    </div>
+                  </td>
+                </tr>
+              ) : indexedRows.length ? (
+                indexedRows.map(row => (
+                  <tr key={row.id}>
+                    {normalizedColumns.map(col => (
+                      <td key={col.name}>{formatValue(row.map.get(col.key))}</td>
+                    ))}
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={columns.length}>
+                    <EmptyState
+                      title={endpoint ? 'No records to display' : 'This module is coming soon'}
+                      description={endpoint ? 'This view reflects the authenticated data available to your role.' : 'The supporting API is not part of this module yet.'}
+                    />
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  )
 }
 
 export function QuickLink({ title, description, href }: { title: string; description: string; href: string }) { return <Link href={href} className="quick-link"><span><strong>{title}</strong><small>{description}</small></span><span className="quick-arrow">↗</span></Link> }

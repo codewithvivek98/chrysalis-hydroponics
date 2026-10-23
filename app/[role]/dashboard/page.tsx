@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { ArrowRight, LockKeyhole, Plus, Search } from 'lucide-react'
+import { ArrowRight, Loader2, LockKeyhole, Plus, Search } from 'lucide-react'
 import { apiBaseUrl } from '@/lib/api'
 import { UserManagement } from '@/components/portal/user-management'
 import { DashboardCard, EmptyState, ModuleTable, PortalShell, QuickLink, type PortalRole } from '@/components/portal/portal-shell'
@@ -20,8 +20,9 @@ function Dashboard({ role, user, stats }: { role: PortalRole; user: { name: stri
   const totalUsers = stats ? String(stats.totalUsers) : '—'
   const activeUsers = stats ? String(stats.activeUsers) : '—'
   const facultyMembers = stats ? String(stats.facultyMembers) : '—'
-  const cardSets: Record<PortalRole, { label: string; value: string; detail: string; tone?: 'default' | 'green' | 'amber' }[]> = {
-    superadmin: [{ label: 'Total users', value: totalUsers, detail: stats ? 'Accounts in the centre' : 'Database unavailable' }, { label: 'Active users', value: activeUsers, detail: stats ? 'Currently active accounts' : 'Database unavailable', tone: 'green' }, { label: 'Faculty & members', value: facultyMembers, detail: stats ? `${stats.pendingFaculty} pending faculty approvals` : 'Database unavailable' }, { label: 'Security alerts', value: '—', detail: 'No alert feed connected', tone: 'amber' }],
+  const statsLoading = role === 'superadmin' && stats === undefined
+  const cardSets: Record<PortalRole, { label: string; value: string; detail: string; tone?: 'default' | 'green' | 'amber'; loading?: boolean }[]> = {
+    superadmin: [{ label: 'Total users', value: totalUsers, detail: stats ? 'Accounts in the centre' : statsLoading ? 'Retrieving count…' : 'Database unavailable', loading: statsLoading }, { label: 'Active users', value: activeUsers, detail: stats ? 'Currently active accounts' : statsLoading ? 'Retrieving count…' : 'Database unavailable', tone: 'green', loading: statsLoading }, { label: 'Faculty & members', value: facultyMembers, detail: stats ? `${stats.pendingFaculty} pending faculty approvals` : statsLoading ? 'Retrieving count…' : 'Database unavailable', loading: statsLoading }, { label: 'Security alerts', value: '—', detail: 'No alert feed connected', tone: 'amber' }],
     admin: [{ label: "Today's attendance", value: '—', detail: 'Attendance module pending' }, { label: 'Low-stock items', value: '—', detail: 'Inventory module pending', tone: 'amber' }, { label: 'Faculty & members', value: '—', detail: 'Awaiting user API' }, { label: 'Active projects', value: '—', detail: 'Project module pending', tone: 'green' }],
     faculty: [{ label: 'Assigned students', value: '—', detail: 'Awaiting student API' }, { label: "Today's sessions", value: '—', detail: 'Scheduling module pending', tone: 'green' }, { label: 'Attendance summary', value: '—', detail: 'Attendance module pending' }, { label: 'Active projects', value: '—', detail: 'Project module pending', tone: 'green' }],
     member: [{ label: 'My attendance', value: '—', detail: 'Attendance module pending', tone: 'green' }, { label: 'Active projects', value: '—', detail: 'Project module pending' }, { label: 'Recent notices', value: '—', detail: 'Notices module pending' }, { label: 'Profile status', value: 'Active', detail: 'Verified account', tone: 'green' }],
@@ -31,13 +32,97 @@ function Dashboard({ role, user, stats }: { role: PortalRole; user: { name: stri
 }
 
 export default function DashboardPage() {
-  const params = useParams<{ role: string; }>(); const router = useRouter(); const [user, setUser] = useState<{ name: string; email: string } | null>(null); const [stats, setStats] = useState<{ totalUsers: number; activeUsers: number; facultyMembers: number; pendingFaculty: number }>(); const [denied, setDenied] = useState(false); const [moduleKey, setModuleKey] = useState<string | null>(null)
-  const role = roles[params.role]; const pathModule = typeof window !== 'undefined' ? window.location.pathname.split('/').pop() : 'dashboard'
-  const activeModule = useMemo(() => pathModule === 'dashboard' ? null : pathModule, [pathModule])
-  useEffect(() => { if (!role) { setDenied(true); return } ; fetch(`${apiBaseUrl}/api/auth/me`, { credentials: 'include' }).then(async response => { if (!response.ok) throw new Error(); return response.json() }).then(data => { const actual = data.user.role === 'super_admin' ? 'superadmin' : data.user.role; if (actual !== role) setDenied(true); else { setUser(data.user); return fetch(`${apiBaseUrl}/api/auth/stats`, { credentials: 'include' }) } }).then(async response => { if (response?.ok) { const data = await response.json(); setStats(data.stats) } }).catch(() => router.replace('/login')) }, [role, router])
-  useEffect(() => { setModuleKey(activeModule ?? null) }, [activeModule])
-  async function logout() { await fetch(`${apiBaseUrl}/api/auth/logout`, { method: 'POST', credentials: 'include' }); router.replace('/') }
-  if (denied) return <main className="auth-page"><div className="auth-card"><p className="eyebrow">ACCESS DENIED</p><h1>This portal is restricted.</h1><p className="muted">Your account does not have permission to view this area.</p><a className="button button-dark" href="/portal">Return to portal</a></div></main>
-  if (!user) return <main className="auth-page"><div className="auth-card"><h1>Loading portal…</h1><p className="muted">Verifying your centre account.</p></div></main>
-  return <PortalShell role={role} user={user} onLogout={logout}>{moduleKey === 'users' && (role === 'admin' || role === 'superadmin') ? <UserManagement actorRole={role} /> : moduleKey ? <ModuleTable title={modules[moduleKey]?.title ?? 'Workspace'} columns={modules[moduleKey]?.columns ?? ['Name', 'Status', 'Updated']} /> : <Dashboard role={role} user={user} stats={stats} />}</PortalShell>
+  const params = useParams<{ role: string; section?: string }>()
+  const router = useRouter()
+  const [user, setUser] = useState<{ name: string; email: string } | null>(null)
+  const [stats, setStats] = useState<{ totalUsers: number; activeUsers: number; facultyMembers: number; pendingFaculty: number }>()
+  const [denied, setDenied] = useState(false)
+
+  const role = params?.role ? roles[params.role] : undefined
+  const moduleKey = params?.section && params.section !== 'dashboard' ? params.section : null
+
+  useEffect(() => {
+    if (!role) {
+      setDenied(true)
+      return
+    }
+    let cancelled = false
+
+    fetch(`${apiBaseUrl}/api/auth/me`, { credentials: 'include' })
+      .then(async response => {
+        if (!response.ok) throw new Error('Unauthenticated')
+        return response.json()
+      })
+      .then(data => {
+        if (cancelled) return
+        const actual = data.user.role === 'super_admin' ? 'superadmin' : data.user.role
+        if (actual !== role) {
+          setDenied(true)
+        } else {
+          setUser(data.user)
+          return fetch(`${apiBaseUrl}/api/auth/stats`, { credentials: 'include' })
+            .then(async statsRes => {
+              if (statsRes.ok && !cancelled) {
+                const statsData = await statsRes.json()
+                setStats(statsData.stats)
+              }
+            })
+            .catch(() => undefined)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) router.replace('/login')
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [role, router])
+
+  async function logout() {
+    await fetch(`${apiBaseUrl}/api/auth/logout`, { method: 'POST', credentials: 'include' })
+    router.replace('/')
+  }
+
+  if (denied) {
+    return (
+      <main className="auth-page">
+        <div className="auth-card">
+          <p className="eyebrow">ACCESS DENIED</p>
+          <h1>This portal is restricted.</h1>
+          <p className="muted">Your account does not have permission to view this area.</p>
+          <a className="button button-dark" href="/portal">Return to portal</a>
+        </div>
+      </main>
+    )
+  }
+
+  if (!user || !role) {
+    return (
+      <main className="auth-page">
+        <div className="auth-card">
+          <div className="loading-panel">
+            <Loader2 className="spinner" size={36} />
+            <h1 style={{ fontSize: 'clamp(28px, 5vw, 42px)', margin: '6px 0 12px' }}>Loading portal…</h1>
+            <p className="muted" style={{ margin: 0 }}>Verifying your centre account.</p>
+          </div>
+        </div>
+      </main>
+    )
+  }
+
+  return (
+    <PortalShell role={role} user={user} onLogout={logout}>
+      {moduleKey === 'users' && (role === 'admin' || role === 'superadmin') ? (
+        <UserManagement actorRole={role} />
+      ) : moduleKey ? (
+        <ModuleTable
+          title={modules[moduleKey]?.title ?? 'Workspace'}
+          columns={modules[moduleKey]?.columns ?? ['Name', 'Status', 'Updated']}
+        />
+      ) : (
+        <Dashboard role={role} user={user} stats={stats} />
+      )}
+    </PortalShell>
+  )
 }

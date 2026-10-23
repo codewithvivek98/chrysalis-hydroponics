@@ -8,7 +8,7 @@ export async function requireAuth(request: Request, response: Response, next: Ne
   const sessionRequest = request as SessionRequest
   if (!sessionRequest.session.userId) return response.status(401).json({ ok: false, error: 'Authentication required' })
   try {
-    const user = await User.findById(sessionRequest.session.userId).lean()
+    const user = await User.findById(sessionRequest.session.userId).select('name email role status department profileImage').lean()
     if (!user) return response.status(401).json({ ok: false, error: 'Authentication required' })
     request.authUser = safeUser(user) as NonNullable<Request['authUser']>
     next()

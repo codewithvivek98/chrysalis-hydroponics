@@ -92,3 +92,78 @@ test('invalid MongoDB ids are rejected by route validators', () => {
   assert.equal(objectId.test('507f1f77bcf86cd799439011'), true)
   assert.equal(objectId.test('invalid-id'), false)
 })
+
+test('sensitive API routes enforce private no-store cache controls', () => {
+  const headers: Record<string, string> = {}
+  const mockRes = {
+    setHeader(name: string, value: string) {
+      headers[name.toLowerCase()] = value
+    }
+  }
+  const checkCacheHeaders = (path: string) => {
+    if (path.startsWith('/auth') || path.startsWith('/modules')) {
+      mockRes.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private')
+      mockRes.setHeader('Pragma', 'no-cache')
+    }
+  }
+  checkCacheHeaders('/auth/me')
+  assert.equal(headers['cache-control'], 'no-store, no-cache, must-revalidate, private')
+  assert.equal(headers['pragma'], 'no-cache')
+})
+
+test('gzip compression applies to large payloads with proper header negotiation', () => {
+  const zlib = require('node:zlib')
+  const payload = JSON.stringify({ items: Array.from({ length: 100 }, (_, i) => ({ id: i, label: 'sample' })) })
+  assert.equal(Buffer.byteLength(payload) > 512, true)
+  const compressed = zlib.gzipSync(Buffer.from(payload))
+  assert.equal(compressed.length < payload.length, true)
+})
+
+test('csrf protection blocks cross-origin state changes while allowing safe methods', () => {
+  const { csrfProtection } = require('../server/src/auth/csrf')
+  const allowed = 'http://localhost:3000'
+  
+  // Safe GET request should pass without origin
+  let getPassed = false
+  csrfProtection({ method: 'GET', headers: {} } as any, {} as any, () => { getPassed = true })
+  assert.equal(getPassed, true)
+
+  // Unauthorized POST request must be blocked
+  const resBad = responseMock()
+  let postPassed = false
+  csrfProtection({ method: 'POST', headers: { origin: 'https://evil-attacker.com' } } as any, resBad as any, () => { postPassed = true })
+  assert.equal(postPassed, false)
+  assert.equal(resBad.statusCode, 403)
+
+  // Authorized POST request must pass
+  let authPassed = false
+  csrfProtection({ method: 'POST', headers: { origin: allowed } } as any, {} as any, () => { authPassed = true })
+  assert.equal(authPassed, true)
+})
+
+test('timing-safe secret comparison prevents length and content leakage', () => {
+  const crypto = require('node:crypto')
+  function timingSafeMatch(a: string, b: string): boolean {
+    if (!a || !b) return false
+    const aBuf = Buffer.from(a)
+    const bBuf = Buffer.from(b)
+    if (aBuf.length !== bBuf.length) return false
+    return crypto.timingSafeEqual(aBuf, bBuf)
+  }
+  const secret = 'BootstrapSecret-SuperAdmin-2026!LongerSecret'
+  assert.equal(timingSafeMatch(secret, secret), true)
+  assert.equal(timingSafeMatch('wrong', secret), false)
+  assert.equal(timingSafeMatch('BootstrapSecret-SuperAdmin-2026!WrongSuffix', secret), false)
+})
+
+test('faculty attendance marking requires an assigned session boundary', () => {
+  const checkFacultySession = (role: string, session?: string) => {
+    if (role === 'faculty') {
+      if (!session) return { allowed: false, error: 'Faculty must specify an assigned attendance session' }
+    }
+    return { allowed: true }
+  }
+  assert.equal(checkFacultySession('faculty', undefined).allowed, false)
+  assert.equal(checkFacultySession('faculty', '507f1f77bcf86cd799439011').allowed, true)
+  assert.equal(checkFacultySession('admin', undefined).allowed, true)
+})

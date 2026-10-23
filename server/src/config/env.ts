@@ -34,6 +34,11 @@ export const env = {
   bootstrapSecret: process.env.BOOTSTRAP_SECRET ?? '',
 } as const
 
+export const allowedOrigins = (clientOrigin || 'http://localhost:3000')
+  .split(',')
+  .map(o => o.trim().replace(/\/+$/, ''))
+  .filter(Boolean)
+
 export function hasMongoConfiguration() {
   return Boolean(env.mongoUri)
 }

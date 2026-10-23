@@ -11,5 +11,17 @@
 @media(max-width:900px){.portal-sidebar{width:230px;flex-basis:230px}.portal-content{width:calc(100% - 40px)}.dashboard-cards{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:680px){.portal-sidebar{position:fixed;z-index:40;left:-280px;top:0;transition:left .2s ease;width:270px;flex-basis:270px;box-shadow:20px 0 40px rgba(7,30,20,.22)}.portal-sidebar.open{left:0}.sidebar-close{display:block;margin-left:auto;background:none;border:0;color:#b9ceb4}.portal-topbar{height:64px;padding:0 18px}.mobile-menu{display:block}.portal-breadcrumb{display:none}.portal-user .user-copy,.user-chevron{display:none}.portal-content{width:calc(100% - 32px);padding:34px 0 50px}.portal-page-heading{display:block}.portal-page-heading h1{font-size:42px}.portal-action{margin-top:22px}.dashboard-cards{grid-template-columns:1fr 1fr;gap:9px}.dashboard-card{padding:15px;min-height:125px}.dashboard-card strong{font-size:30px;margin-top:17px}.dashboard-card p{font-size:10px}.portal-grid{grid-template-columns:1fr;gap:15px}.module-panel{padding:18px}.portal-note{padding:16px}.portal-note>svg:last-child{display:none}}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*:before,*:after{transition-duration:.01ms!important;animation-duration:.01ms!important}}
+@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+.spinner{animation:spin .9s linear infinite;display:inline-block;vertical-align:middle}
+.loading-panel{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:48px 16px;gap:14px;color:var(--muted);text-align:center}
+.loading-panel p{margin:0;font-size:13px;color:var(--muted)}
+.loading-panel .spinner{color:var(--forest)}
+.button .spinner{margin-right:6px}
+.skeleton-box{background:linear-gradient(90deg,#edf4e9 25%,#e0ebd6 50%,#edf4e9 75%);background-size:200% 100%;animation:shimmer 1.5s infinite;border-radius:4px;display:inline-block}
+.skeleton-text{height:16px;width:100%;margin:4px 0}
+.skeleton-card-val{height:38px;width:70px;margin-top:22px;border-radius:4px}
+@media(prefers-reduced-motion:reduce){.spinner{animation-duration:3s}.skeleton-box{animation:none;background:#edf4e9}}
+
 
 
