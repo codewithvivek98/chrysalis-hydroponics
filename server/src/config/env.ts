@@ -17,11 +17,19 @@ if (nodeEnv === 'production' && sessionSecret.length < 32) {
   throw new Error('SESSION_SECRET must be at least 32 characters in production')
 }
 
+const clientOrigin =
+  process.env.CLIENT_ORIGIN ??
+  (nodeEnv === 'production' ? '' : 'http://localhost:3000')
+
+if (nodeEnv === 'production' && !clientOrigin) {
+  throw new Error('CLIENT_ORIGIN is required in production')
+}
+
 export const env = {
   port,
   nodeEnv,
   mongoUri: process.env.MONGODB_URI ?? '',
-  clientOrigin: process.env.CLIENT_ORIGIN ?? 'http://localhost:3000',
+  clientOrigin,
   sessionSecret: sessionSecret || 'development-only-change-me',
   bootstrapSecret: process.env.BOOTSTRAP_SECRET ?? '',
 } as const
@@ -37,6 +45,10 @@ export function isProduction() {
 export function validateStartupConfiguration() {
   if (isProduction() && !hasMongoConfiguration()) {
     throw new Error('MONGODB_URI is required when NODE_ENV=production')
+  }
+
+  if (isProduction() && !env.clientOrigin) {
+    throw new Error('CLIENT_ORIGIN is required in production')
   }
 }
 
