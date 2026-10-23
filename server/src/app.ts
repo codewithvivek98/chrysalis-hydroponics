@@ -21,7 +21,7 @@ app.use(session({
   secret: env.sessionSecret,
   resave: false,
   saveUninitialized: false,
-  cookie: { httpOnly: true, sameSite: 'lax', secure: env.nodeEnv === 'production', maxAge: 1000 * 60 * 60 * 8 },
+  cookie: { httpOnly: true, sameSite: env.nodeEnv === 'production' ? 'none' : 'lax', secure: env.nodeEnv === 'production', maxAge: 1000 * 60 * 60 * 8 },
   ...(env.mongoUri ? { store: MongoStore.create({ mongoUrl: env.mongoUri, ttl: 60 * 60 * 8 }) } : {}),
 }))
 
